@@ -8,13 +8,13 @@ WORKDIR /data
 RUN pip install --upgrade pip && \
     pip install safetensors==0.3.1 sentencepiece huggingface_hub accelerate==0.21.0 peft==0.4.0 bitsandbytes==0.40.2 transformers==4.34.0 trl==0.4.7 scipy  \
         git+https://github.com/winglian/runpod-python.git@fix-generator-check ninja==1.11.1
-RUN git clone https://github.com/turboderp/exllama
-RUN pip install -r exllama/requirements.txt
+# RUN git clone https://github.com/turboderp/exllama
+# RUN pip install -r exllama/requirements.txt
 
 COPY handler.py /data/handler.py
 COPY __init.py__ /data/__init__.py
 
-ENV PYTHONPATH=/data/exllama
+# ENV PYTHONPATH=/data/exllama
 ENV MODEL_REPO=""
 ENV PROMPT_PREFIX=""
 ENV PROMPT_SUFFIX=""

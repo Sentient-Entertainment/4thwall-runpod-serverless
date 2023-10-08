@@ -7,3 +7,5 @@ bitsandbytes==0.40.2
 transformers==4.31.0 
 trl==0.4.7 
 scipy
+runpod
+xformers

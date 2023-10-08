@@ -15,10 +15,11 @@ from transformers import (
     LlamaTokenizerFast,
     pipeline,
 )
+from peft import PeftModel
 import logging
 from peft import LoraConfig, PeftModel
 from copy import copy
-
+import time
 import re
 import codecs
 
@@ -49,12 +50,22 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 def load_model(max_new_tokens):
     global generator, default_settings
 
+    # model_name = "meta-llama/Llama-2-13b-hf"
+    # gokul_token='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'
+
     load = True
     if load:
         model_directory = snapshot_download(
             repo_id=os.environ["MODEL_REPO"],
             revision=os.getenv("MODEL_REVISION", "main"),
+            token = os.environt["AUTH_TOKEN"]
         )
+        # model_directory = snapshot_download(
+        # repo_id=model_name,
+        # token = gokul_token,
+        # cache_dir = '/workspace/hub'
+        # )
+        # model_directory = "/workspace/hub/models--meta-llama--Llama-2-13b-hf/snapshots/db6b8eb1feabb38985fdf785a89895959e944936/"
         tokenizer_path = os.path.join(model_directory, "tokenizer.model")
         model_config_path = os.path.join(model_directory, "config.json")
         st_pattern = os.path.join(model_directory, "*.safetensors")
@@ -101,15 +112,19 @@ def load_model(max_new_tokens):
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "right"  # Fix weird overflow issue with fp16 training
 
-        pipe = pipeline(
-            task="text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-        )
+        model = PeftModel.from_pretrained(model, "gokul8967/Loki-lora", adapter_name="Loki")
+        model.load_adapter("gokul8967/Stark-lora", adapter_name = "Tony Stark")
 
-        return pipe
+        return model, tokenizer
+        # pipe = pipeline(
+        #     task="text-generation",
+        #     model=model,
+        #     tokenizer=tokenizer,
+        #     max_new_tokens=max_new_tokens,
+        #     do_sample=True,
+        # )
+
+        # return pipe
 
         # EXLLAMA IMPLEMENTAION
         # Create config, model, tokenizer and generator
@@ -141,6 +156,7 @@ generator = None
 default_settings = None
 prompt_prefix = decode_escapes(os.getenv("PROMPT_PREFIX", ""))
 prompt_suffix = decode_escapes(os.getenv("PROMPT_SUFFIX", ""))
+model, tokenizer = load_model(100)
 
 
 def generate_with_streaming(prompt, max_new_tokens):
@@ -184,7 +200,18 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
     max_new_tokens = job_input.pop("max_new_tokens", 100)
     stream: bool = job_input.pop("stream", False)
 
-    pipe = load_model(max_new_tokens)
+    st = time.time()
+    model.set_adapter('Tony Stark')
+    et = time.time()
+
+    print("Time to set adapter: ", (et-st))
+    pipe = pipeline(
+        task="text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=max_new_tokens,
+        do_sample=True,
+    )
 
     ####
     # generator, default_settings = load_model(max_new_tokens)
@@ -203,6 +230,5 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         result = pipe(prompt)
         output_text = result[0]["generated_text"]
         yield output_text[len(prompt) :]
-
 
 runpod.serverless.start({"handler": inference})
