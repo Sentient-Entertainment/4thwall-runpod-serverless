@@ -20,29 +20,38 @@ import re
 import codecs
 
 
-ESCAPE_SEQUENCE_RE = re.compile(r'''
+ESCAPE_SEQUENCE_RE = re.compile(
+    r"""
     ( \\U........      # 8-digit hex escapes
     | \\u....          # 4-digit hex escapes
     | \\x..            # 2-digit hex escapes
     | \\[0-7]{1,3}     # Octal escapes
     | \\N\{[^}]+\}     # Unicode characters by name
     | \\[\\'"abfnrtv]  # Single-character escapes
-    )''', re.UNICODE | re.VERBOSE)
+    )""",
+    re.UNICODE | re.VERBOSE,
+)
+
 
 def decode_escapes(s):
     def decode_match(match):
-        return codecs.decode(match.group(0), 'unicode-escape')
+        return codecs.decode(match.group(0), "unicode-escape")
 
     return ESCAPE_SEQUENCE_RE.sub(decode_match, s)
 
+
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
 
 def load_model(max_new_tokens):
     global generator, default_settings
 
     load = True
     if load:
-        model_directory = snapshot_download(repo_id=os.environ["MODEL_REPO"], revision=os.getenv("MODEL_REVISION", "main"))
+        model_directory = snapshot_download(
+            repo_id=os.environ["MODEL_REPO"],
+            revision=os.getenv("MODEL_REVISION", "main"),
+        )
         tokenizer_path = os.path.join(model_directory, "tokenizer.model")
         model_config_path = os.path.join(model_directory, "config.json")
         st_pattern = os.path.join(model_directory, "*.safetensors")
@@ -73,14 +82,23 @@ def load_model(max_new_tokens):
                 print("Your GPU supports bfloat16: accelerate training with bf16=True")
                 print("=" * 80)
 
-        config  = AutoConfig.from_pretrained(model_config_path)
-        model = AutoModelForCausalLM.from_pretrained(model_directory,config=config, quantization_config = bnb_config)
+        config = AutoConfig.from_pretrained(model_config_path)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_directory, config=config, quantization_config=bnb_config
+        )
 
-        tokenizer = AutoTokenizer.from_pretrained(model_directory, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_directory, trust_remote_code=True
+        )
         tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.padding_side = "right" # Fix weird overflow issue with fp16 training
-        
-        pipe = pipeline(task="text-generation", model = model, tokenizer = tokenizer, max_new_tokens = max_new_tokens)
+        tokenizer.padding_side = "right"  # Fix weird overflow issue with fp16 training
+
+        pipe = pipeline(
+            task="text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            max_new_tokens=max_new_tokens,
+        )
 
         return pipe
 
@@ -109,10 +127,12 @@ def load_model(max_new_tokens):
     #     }
     # return generator, default_settings
 
+
 generator = None
 default_settings = None
 prompt_prefix = decode_escapes(os.getenv("PROMPT_PREFIX", ""))
 prompt_suffix = decode_escapes(os.getenv("PROMPT_SUFFIX", ""))
+
 
 def generate_with_streaming(prompt, max_new_tokens):
     global generator
@@ -120,23 +140,26 @@ def generate_with_streaming(prompt, max_new_tokens):
 
     # Tokenizing the input
     ids = generator.tokenizer.encode(prompt)
-    ids = ids[:, -generator.model.config.max_seq_len:]
+    ids = ids[:, -generator.model.config.max_seq_len :]
 
     generator.gen_begin_reuse(ids)
     initial_len = generator.sequence[0].shape[0]
     has_leading_space = False
     for i in range(max_new_tokens):
         token = generator.gen_single_token()
-        if i == 0 and generator.tokenizer.tokenizer.IdToPiece(int(token)).startswith('▁'):
+        if i == 0 and generator.tokenizer.tokenizer.IdToPiece(int(token)).startswith(
+            "▁"
+        ):
             has_leading_space = True
 
         decoded_text = generator.tokenizer.decode(generator.sequence[0][initial_len:])
         if has_leading_space:
-            decoded_text = ' ' + decoded_text
+            decoded_text = " " + decoded_text
 
         yield decoded_text
         if token.item() == generator.tokenizer.eos_token_id:
             break
+
 
 def inference(event) -> Union[str, Generator[str, None, None]]:
     logging.info(event)
@@ -144,12 +167,16 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
     if not job_input:
         raise ValueError("No input provided")
 
-    prompt: str = job_input.pop("prompt_prefix", prompt_prefix) + job_input.pop("prompt") + job_input.pop("prompt_suffix", prompt_suffix)
+    prompt: str = (
+        job_input.pop("prompt_prefix", prompt_prefix)
+        + job_input.pop("prompt")
+        + job_input.pop("prompt_suffix", prompt_suffix)
+    )
     max_new_tokens = job_input.pop("max_new_tokens", 100)
     stream: bool = job_input.pop("stream", False)
-    
+
     pipe = load_model(max_new_tokens)
-    
+
     ####
     # generator, default_settings = load_model(max_new_tokens)
 
@@ -166,7 +193,7 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
     else:
         result = pipe(prompt)
         output_text = result[0]["generated_text"]
-        output_text = generator.generate_simple(prompt, max_new_tokens = max_new_tokens)
-        yield output_text[len(prompt):]
+        yield output_text[len(prompt) :]
+
 
 runpod.serverless.start({"handler": inference})
