@@ -6,7 +6,7 @@ WORKDIR /data
 
 # Install Python dependencies (Worker Template)
 RUN pip install --upgrade pip && \
-    pip install safetensors==0.3.1 sentencepiece huggingface_hub \
+    pip install safetensors==0.3.1 sentencepiece huggingface_hub accelerate==0.21.0 peft==0.4.0 bitsandbytes==0.40.2 transformers==4.34.0 trl==0.4.7 scipy  \
         git+https://github.com/winglian/runpod-python.git@fix-generator-check ninja==1.11.1
 RUN git clone https://github.com/turboderp/exllama
 RUN pip install -r exllama/requirements.txt
