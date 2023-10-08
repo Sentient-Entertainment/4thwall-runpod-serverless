@@ -10,6 +10,9 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig,
     AutoConfig,
+    LlamaForCausalLM,
+    LlamaConfig,
+    LlamaTokenizerFast,
     pipeline,
 )
 import logging
@@ -82,12 +85,17 @@ def load_model(max_new_tokens):
                 print("Your GPU supports bfloat16: accelerate training with bf16=True")
                 print("=" * 80)
 
-        config = AutoConfig.from_pretrained(model_config_path)
-        model = AutoModelForCausalLM.from_pretrained(
+        config = LlamaConfig.from_pretrained(model_config_path)
+        model = LlamaForCausalLM.from_pretrained(
             model_directory, config=config, quantization_config=bnb_config
         )
 
-        tokenizer = AutoTokenizer.from_pretrained(
+        # config = AutoConfig.from_pretrained(model_config_path)
+        # model = AutoModelForCausalLM.from_pretrained(
+        #     model_directory, config=config, quantization_config=bnb_config
+        # )
+
+        tokenizer = LlamaTokenizerFast.from_pretrained(
             model_directory, trust_remote_code=True
         )
         tokenizer.pad_token = tokenizer.eos_token
@@ -98,6 +106,7 @@ def load_model(max_new_tokens):
             model=model,
             tokenizer=tokenizer,
             max_new_tokens=max_new_tokens,
+            do_sample=True,
         )
 
         return pipe
