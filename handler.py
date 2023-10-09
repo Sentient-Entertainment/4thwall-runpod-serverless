@@ -129,6 +129,7 @@ def load_model(max_new_tokens):
 
         # return pipe
 
+
 generator = None
 default_settings = None
 prompt_prefix = decode_escapes(os.getenv("PROMPT_PREFIX", ""))
@@ -162,6 +163,7 @@ def generate_with_streaming(prompt, max_new_tokens):
         if token.item() == generator.tokenizer.eos_token_id:
             break
 
+
 def evaluate(
     prompt,
     input=None,
@@ -179,7 +181,7 @@ def evaluate(
         temperature=temperature,
         top_p=top_p,
         top_k=top_k,
-        num_beams=num_beams,
+        do_sample=True,
         no_repeat_ngram_size=3,
         **kwargs,
     )
@@ -196,14 +198,17 @@ def evaluate(
     output = tokenizer.decode(s)
     return output
 
+
 def inference_test(additional_convo):
     # logging.info(event)
     # job_input = event["input"]
     # if not job_input:
     #     raise ValueError("No input provided")
 
-    job_input = {"prompt":"You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n\n",
-    "character":"Loki"}
+    job_input = {
+        "prompt": "You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n\n",
+        "character": "Loki",
+    }
 
     prompt: str = (
         job_input.pop("prompt_prefix", prompt_prefix)
@@ -246,8 +251,6 @@ def inference_test(additional_convo):
         output_text = result[0]["generated_text"]
         print(output_text)
         # yield output_text[len(prompt) :]
-
-
 
 
 def inference(event) -> Union[str, Generator[str, None, None]]:
