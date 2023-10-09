@@ -58,7 +58,7 @@ def load_model(max_new_tokens):
         model_directory = snapshot_download(
             repo_id=os.environ["MODEL_REPO"],
             revision=os.getenv("MODEL_REVISION", "main"),
-            token = os.environt["AUTH_TOKEN"]
+            token=os.environ["AUTH_TOKEN"],
         )
         # model_directory = snapshot_download(
         # repo_id=model_name,
@@ -112,8 +112,10 @@ def load_model(max_new_tokens):
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "right"  # Fix weird overflow issue with fp16 training
 
-        model = PeftModel.from_pretrained(model, "gokul8967/Loki-lora", adapter_name="Loki")
-        model.load_adapter("gokul8967/Stark-lora", adapter_name = "Tony Stark")
+        model = PeftModel.from_pretrained(
+            model, "gokul8967/Loki-lora", adapter_name="Loki"
+        )
+        model.load_adapter("gokul8967/Stark-lora", adapter_name="Tony Stark")
 
         return model, tokenizer
         # pipe = pipeline(
@@ -197,14 +199,15 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         + job_input.pop("prompt")
         + job_input.pop("prompt_suffix", prompt_suffix)
     )
+    character = job_input.pop("character", "Loki")
     max_new_tokens = job_input.pop("max_new_tokens", 100)
     stream: bool = job_input.pop("stream", False)
 
     st = time.time()
-    model.set_adapter('Tony Stark')
+    model.set_adapter(character)
     et = time.time()
 
-    print("Time to set adapter: ", (et-st))
+    print("Time to set adapter: ", (et - st))
     pipe = pipeline(
         task="text-generation",
         model=model,
@@ -230,5 +233,6 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         result = pipe(prompt)
         output_text = result[0]["generated_text"]
         yield output_text[len(prompt) :]
+
 
 runpod.serverless.start({"handler": inference})
