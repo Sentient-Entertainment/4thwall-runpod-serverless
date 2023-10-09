@@ -99,36 +99,21 @@ def load_model(max_new_tokens):
 
         config = LlamaConfig.from_pretrained(model_config_path)
         model = LlamaForCausalLM.from_pretrained(
-            model_directory, config=config, quantization_config=bnb_config
+            model_directory, config=config,  quantization_config=bnb_config
         )
-
-        # config = AutoConfig.from_pretrained(model_config_path)
-        # model = AutoModelForCausalLM.from_pretrained(
-        #     model_directory, config=config, quantization_config=bnb_config
-        # )
-
         tokenizer = LlamaTokenizerFast.from_pretrained(
-            model_directory, trust_remote_code=True
+            model_directory
         )
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "right"  # Fix weird overflow issue with fp16 training
 
         model = PeftModel.from_pretrained(
-            model, "gokul8967/Loki-lora", adapter_name="Loki"
+            model, "gokul8967/Loki-lora", adapter_name="Loki", quantization_config=bnb_config
         )
-        model.load_adapter("gokul8967/Stark-lora", adapter_name="Tony Stark")
-
+ 
+        model.load_adapter("gokul8967/Stark-lora", adapter_name="Tony Stark", quantization_config=bnb_config)
+        
         return model, tokenizer
-        # pipe = pipeline(
-        #     task="text-generation",
-        #     model=model,
-        #     tokenizer=tokenizer,
-        #     max_new_tokens=max_new_tokens,
-        #     do_sample=True,
-        # )
-
-        # return pipe
-
 
 generator = None
 default_settings = None
@@ -167,22 +152,18 @@ def generate_with_streaming(prompt, max_new_tokens):
 def evaluate(
     prompt,
     input=None,
-    temperature=0.1,
+    temperature=0.7,
     top_p=0.75,
     top_k=40,
     num_beams=4,
-    max_new_tokens=256,
+    max_new_tokens=100,
     **kwargs,
 ):
-    # prompt = generate_prompt(instruction, input)
     inputs = tokenizer(prompt, return_tensors="pt")
     input_ids = inputs["input_ids"].to("cuda")
     generation_config = GenerationConfig(
         temperature=temperature,
-        top_p=top_p,
-        top_k=top_k,
         do_sample=True,
-        no_repeat_ngram_size=3,
         **kwargs,
     )
 
@@ -199,16 +180,9 @@ def evaluate(
     return output
 
 
-def inference_test(additional_convo):
-    # logging.info(event)
-    # job_input = event["input"]
-    # if not job_input:
-    #     raise ValueError("No input provided")
-
-    job_input = {
-        "prompt": "You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n\n",
-        "character": "Loki",
-    }
+def inference_test():
+    job_input = {"prompt":"You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n\nUser:Hey loki boss<\\s>\nLoki:",
+    "character":"Loki"}
 
     prompt: str = (
         job_input.pop("prompt_prefix", prompt_prefix)
@@ -224,21 +198,13 @@ def inference_test(additional_convo):
     et = time.time()
 
     print("Time to set adapter: ", (et - st))
-    # pipe = pipeline(
-    #     task="text-generation",
-    #     model=model,
-    #     tokenizer=tokenizer,
-    #     max_new_tokens=max_new_tokens,
-    #     do_sample=True,
-    # )
-
-    ####
-    # generator, default_settings = load_model(max_new_tokens)
-
-    # settings = copy(default_settings)
-    # settings.update(job_input)
-    # for key, value in settings.items():
-    #     setattr(generator.settings, key, value)
+    pipe = pipeline(
+        task="text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=max_new_tokens,
+        do_sample=True,
+    )
 
     if stream:
         print("Streaming not supported now bye bye")
@@ -247,10 +213,11 @@ def inference_test(additional_convo):
         #     yield res
     else:
         result = evaluate(prompt)
-        print(result)
-        output_text = result[0]["generated_text"]
-        print(output_text)
-        # yield output_text[len(prompt) :]
+        pipe_result = pipe(prompt)
+        print("Evaluate output: ",result)
+        print("Pipeline output: ", pipe_result)
+        print("Parse evaluate output: ", result[len(prompt)+4 :])
+    
 
 
 def inference(event) -> Union[str, Generator[str, None, None]]:
@@ -288,8 +255,11 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         # for res in output:
         #     yield res
     else:
-        result = evaluate(prompt)
-        yield result[len(prompt) :]
+        result = evaluate(prompt,max_new_tokens = max_new_tokens)
+        yield result[len(prompt)+4 :]
 
+# while True:
+#     inp = input("Enter  ")
+#     inference_test()
 
 runpod.serverless.start({"handler": inference})
