@@ -13,6 +13,7 @@ from transformers import (
     LlamaForCausalLM,
     LlamaConfig,
     LlamaTokenizerFast,
+    GenerationConfig,
     pipeline,
 )
 from peft import PeftModel
@@ -128,32 +129,6 @@ def load_model(max_new_tokens):
 
         # return pipe
 
-        # EXLLAMA IMPLEMENTAION
-        # Create config, model, tokenizer and generator
-    #     config = ExLlamaConfig(model_config_path)               # create config from config.json
-    #     config.model_path = model_path                          # supply path to model weights file
-
-    #     gpu_split = os.getenv("GPU_SPLIT", "")
-    #     if gpu_split:
-    #         config.set_auto_map(gpu_split)
-    #         config.gpu_peer_fix = True
-    #     alpha_value = int(os.getenv("ALPHA_VALUE", "1"))
-    #     config.max_seq_len = int(os.getenv("MAX_SEQ_LEN", "2048"))
-    #     if alpha_value != 1:
-    #         config.alpha_value = alpha_value
-    #         config.calculate_rotary_embedding_base()
-
-    #     model = ExLlama(config)                                 # create ExLlama instance and load the weights
-    #     tokenizer = ExLlamaTokenizer(tokenizer_path)            # create tokenizer from tokenizer model file
-
-    #     cache = ExLlamaCache(model)                             # create cache for inference
-    #     generator = ExLlamaGenerator(model, tokenizer, cache)   # create generator
-    #     default_settings = {
-    #         k: getattr(generator.settings, k) for k in dir(generator.settings) if k[:2] != '__'
-    #     }
-    # return generator, default_settings
-
-
 generator = None
 default_settings = None
 prompt_prefix = decode_escapes(os.getenv("PROMPT_PREFIX", ""))
@@ -187,6 +162,93 @@ def generate_with_streaming(prompt, max_new_tokens):
         if token.item() == generator.tokenizer.eos_token_id:
             break
 
+def evaluate(
+    prompt,
+    input=None,
+    temperature=0.1,
+    top_p=0.75,
+    top_k=40,
+    num_beams=4,
+    max_new_tokens=256,
+    **kwargs,
+):
+    # prompt = generate_prompt(instruction, input)
+    inputs = tokenizer(prompt, return_tensors="pt")
+    input_ids = inputs["input_ids"].to("cuda")
+    generation_config = GenerationConfig(
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        num_beams=num_beams,
+        no_repeat_ngram_size=3,
+        **kwargs,
+    )
+
+    with torch.no_grad():
+        generation_output = model.generate(
+            input_ids=input_ids,
+            generation_config=generation_config,
+            return_dict_in_generate=True,
+            output_scores=True,
+            max_new_tokens=max_new_tokens,
+        )
+    s = generation_output.sequences[0]
+    output = tokenizer.decode(s)
+    return output
+
+def inference_test(additional_convo):
+    # logging.info(event)
+    # job_input = event["input"]
+    # if not job_input:
+    #     raise ValueError("No input provided")
+
+    job_input = {"prompt":"You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n\n",
+    "character":"Loki"}
+
+    prompt: str = (
+        job_input.pop("prompt_prefix", prompt_prefix)
+        + job_input.pop("prompt")
+        + job_input.pop("prompt_suffix", prompt_suffix)
+    )
+    character = job_input.pop("character", "Loki")
+    max_new_tokens = job_input.pop("max_new_tokens", 100)
+    stream: bool = job_input.pop("stream", False)
+
+    st = time.time()
+    model.set_adapter(character)
+    et = time.time()
+
+    print("Time to set adapter: ", (et - st))
+    # pipe = pipeline(
+    #     task="text-generation",
+    #     model=model,
+    #     tokenizer=tokenizer,
+    #     max_new_tokens=max_new_tokens,
+    #     do_sample=True,
+    # )
+
+    ####
+    # generator, default_settings = load_model(max_new_tokens)
+
+    # settings = copy(default_settings)
+    # settings.update(job_input)
+    # for key, value in settings.items():
+    #     setattr(generator.settings, key, value)
+
+    if stream:
+        print("Streaming not supported now bye bye")
+        # output: Union[str, Generator[str, None, None]] = generate_with_streaming(prompt, max_new_tokens)
+        # for res in output:
+        #     yield res
+    else:
+        result = evaluate(prompt)
+        print(result)
+        output_text = result[0]["generated_text"]
+        print(output_text)
+        # yield output_text[len(prompt) :]
+
+
+
 
 def inference(event) -> Union[str, Generator[str, None, None]]:
     logging.info(event)
@@ -208,13 +270,6 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
     et = time.time()
 
     print("Time to set adapter: ", (et - st))
-    pipe = pipeline(
-        task="text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        max_new_tokens=max_new_tokens,
-        do_sample=True,
-    )
 
     ####
     # generator, default_settings = load_model(max_new_tokens)
@@ -230,9 +285,8 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         # for res in output:
         #     yield res
     else:
-        result = pipe(prompt)
-        output_text = result[0]["generated_text"]
-        yield output_text[len(prompt) :]
+        result = evaluate(prompt)
+        yield result[len(prompt) :]
 
 
 runpod.serverless.start({"handler": inference})
