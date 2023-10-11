@@ -67,6 +67,7 @@ def load_model(max_new_tokens):
         # cache_dir = '/workspace/hub'
         # )
         # model_directory = "/workspace/hub/models--meta-llama--Llama-2-13b-hf/snapshots/db6b8eb1feabb38985fdf785a89895959e944936/"
+        print("Model Directory: ", model_directory)
         tokenizer_path = os.path.join(model_directory, "tokenizer.model")
         model_config_path = os.path.join(model_directory, "config.json")
         st_pattern = os.path.join(model_directory, "*.safetensors")
