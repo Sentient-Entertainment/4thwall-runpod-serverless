@@ -182,7 +182,7 @@ def evaluate(
 
 
 def inference_test():
-    job_input = {"prompt":"You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n\nUser:Hey loki boss<\\s>\nLoki:",
+    job_input = {"prompt":"<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard\n<<SYS>>.\n\nUser:Hey loki boss</s>\nLoki:",
     "character":"Loki"}
 
     prompt: str = (
@@ -217,7 +217,7 @@ def inference_test():
         pipe_result = pipe(prompt)
         print("Evaluate output: ",result)
         print("Pipeline output: ", pipe_result)
-        print("Parse evaluate output: ", result[len(prompt)+4 :])
+        print("Parse evaluate output: ", result[len(prompt)+5 :])
     
 
 
@@ -257,7 +257,7 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         #     yield res
     else:
         result = evaluate(prompt,max_new_tokens = max_new_tokens)
-        yield result[len(prompt)+4 :]
+        yield result[len(prompt)+5 :]
 
 # while True:
 #     inp = input("Enter  ")
