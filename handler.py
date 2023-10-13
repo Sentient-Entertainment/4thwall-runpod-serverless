@@ -100,21 +100,33 @@ def load_model(max_new_tokens):
 
         config = LlamaConfig.from_pretrained(model_config_path)
         model = LlamaForCausalLM.from_pretrained(
-            model_directory, config=config,  quantization_config=bnb_config
+            model_directory, config=config, quantization_config=bnb_config
         )
-        tokenizer = LlamaTokenizerFast.from_pretrained(
-            model_directory
-        )
+        tokenizer = LlamaTokenizerFast.from_pretrained(model_directory)
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "right"  # Fix weird overflow issue with fp16 training
 
         model = PeftModel.from_pretrained(
-            model, "gokul8967/Loki-lora", adapter_name="Loki", quantization_config=bnb_config
+            model,
+            "gokul8967/Loki-lora",
+            adapter_name="Loki",
+            quantization_config=bnb_config,
         )
- 
-        model.load_adapter("gokul8967/Stark-lora", adapter_name="Tony Stark", quantization_config=bnb_config)
-        
+
+        model.load_adapter(
+            "gokul8967/Stark-lora",
+            adapter_name="Tony Stark",
+            quantization_config=bnb_config,
+        )
+
+        model.load_adapter(
+            "gokul8967/Joker-lora",
+            adapter_name="Joker",
+            quantization_config=bnb_config,
+        )
+
         return model, tokenizer
+
 
 generator = None
 default_settings = None
@@ -154,8 +166,8 @@ def evaluate(
     prompt,
     input=None,
     temperature=0.7,
-    top_p=0.75,
-    top_k=40,
+    top_p=0.9,
+    top_k=50,
     num_beams=4,
     max_new_tokens=100,
     **kwargs,
@@ -177,13 +189,15 @@ def evaluate(
             max_new_tokens=max_new_tokens,
         )
     s = generation_output.sequences[0]
-    output = tokenizer.decode(s)
+    output = tokenizer.decode(s).replace("<s> ", "")
     return output
 
 
 def inference_test():
-    job_input = {"prompt":"<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard\n<<SYS>>.\n\nUser:Hey loki boss</s>\nLoki:",
-    "character":"Loki"}
+    job_input = {
+        "prompt": "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard\n<<SYS>>.\n\nUser:Hey loki boss</s>\nLoki:",
+        "character": "Loki",
+    }
 
     prompt: str = (
         job_input.pop("prompt_prefix", prompt_prefix)
@@ -215,10 +229,9 @@ def inference_test():
     else:
         result = evaluate(prompt)
         pipe_result = pipe(prompt)
-        print("Evaluate output: ",result)
+        print("Evaluate output: ", result)
         print("Pipeline output: ", pipe_result)
-        print("Parse evaluate output: ", result[len(prompt)+5 :])
-    
+        print("Parse evaluate output: ", result[len(prompt) + 5 :])
 
 
 def inference(event) -> Union[str, Generator[str, None, None]]:
@@ -240,6 +253,14 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
     model.set_adapter(character)
     et = time.time()
 
+    # pipe = pipeline(
+    #     task="text-generation",
+    #     model=model,
+    #     tokenizer=tokenizer,
+    #     max_new_tokens=max_new_tokens,
+    #     do_sample=True,
+    # )
+
     print("Time to set adapter: ", (et - st))
 
     ####
@@ -256,8 +277,12 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         # for res in output:
         #     yield res
     else:
-        result = evaluate(prompt,max_new_tokens = max_new_tokens)
-        yield result[len(prompt)+5 :]
+        result = evaluate(prompt, max_new_tokens=max_new_tokens)
+        print("Curr result: ", result)
+        # result = pipe(prompt)[0]["generated_text"]
+        yield result[len(prompt)]
+        # yield result[len(prompt) :]
+
 
 # while True:
 #     inp = input("Enter  ")
