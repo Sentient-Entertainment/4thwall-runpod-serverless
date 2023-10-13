@@ -98,14 +98,14 @@ def load_model(max_new_tokens):
                 print("Your GPU supports bfloat16: accelerate training with bf16=True")
                 print("=" * 80)
 
-        config = LlamaConfig.from_pretrained(model_config_path)
-        model = LlamaForCausalLM.from_pretrained(
+        config = AutoConfig.from_pretrained(model_config_path)
+        model = AutoModelForCausalLM.from_pretrained(
             model_directory, config=config, quantization_config=bnb_config
         )
-        tokenizer = LlamaTokenizerFast.from_pretrained(model_directory)
+        tokenizer = AutoTokenizer.from_pretrained(model_directory)
+        print("EOS TOKEN: ", tokenizer.eos_token)
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "right"  # Fix weird overflow issue with fp16 training
-
         model = PeftModel.from_pretrained(
             model,
             "gokul8967/Loki-lora",
@@ -189,7 +189,9 @@ def evaluate(
             max_new_tokens=max_new_tokens,
         )
     s = generation_output.sequences[0]
-    output = tokenizer.decode(s).replace("<s> ", "")
+    output = tokenizer.decode(s)
+    print("RAW OUTPTU: ", output)
+    output.replace("<s>", " ")
     return output
 
 
@@ -245,6 +247,7 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         + job_input.pop("prompt")
         + job_input.pop("prompt_suffix", prompt_suffix)
     )
+    print("Prompt is : ", prompt)
     character = job_input.pop("character", "Loki")
     max_new_tokens = job_input.pop("max_new_tokens", 100)
     stream: bool = job_input.pop("stream", False)
@@ -253,13 +256,13 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
     model.set_adapter(character)
     et = time.time()
 
-    # pipe = pipeline(
-    #     task="text-generation",
-    #     model=model,
-    #     tokenizer=tokenizer,
-    #     max_new_tokens=max_new_tokens,
-    #     do_sample=True,
-    # )
+    pipe = pipeline(
+        task="text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=max_new_tokens,
+        do_sample=True,
+    )
 
     print("Time to set adapter: ", (et - st))
 
@@ -280,7 +283,7 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         result = evaluate(prompt, max_new_tokens=max_new_tokens)
         print("Curr result: ", result)
         # result = pipe(prompt)[0]["generated_text"]
-        yield result[len(prompt)]
+        yield result[len(prompt) :]
         # yield result[len(prompt) :]
 
 
