@@ -28,10 +28,11 @@ import spacy
 import zss
 from zss import Node
 from collections import Counter
+
 nlp = spacy.load("en_core_web_sm")
 
 openai_model = "gpt-3.5-turbo"
-openai.api_key = "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"
+openai.api_key = "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"
 
 
 ESCAPE_SEQUENCE_RE = re.compile(
@@ -55,6 +56,7 @@ def decode_escapes(s):
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
 
 def purge_dialogue(text, prompt, ind):
     pattern = r"(\w+:.*?</s>)"
@@ -144,7 +146,7 @@ def handle_match(last_line, rest_conv, gpt_prompt, character, sentences):
         rest_conv.append(new_last_line)
         return True
 
-    if re.match(r'^\.*$',last_line):
+    if re.match(r"^\.*$", last_line):
         return False
 
     # Partial match
@@ -237,6 +239,7 @@ def repeated_dialogue(text, character, prompt, gpt_prompt):
         print("NO MATCH")
         return prompt + clean_text + "\n"
 
+
 def ensure_correct_ending(s):
     s = s.strip()
 
@@ -318,13 +321,11 @@ def load_model(max_new_tokens):
         model.load_adapter(
             "gokul8967/Stark-lora",
             adapter_name="Tony Stark",
-            quantization_config=bnb_config
+            quantization_config=bnb_config,
         )
 
         model.load_adapter(
-            "gokul8967/Joker-lora",
-            adapter_name="Joker",
-            quantization_config=bnb_config
+            "gokul8967/Joker-lora", adapter_name="Joker", quantization_config=bnb_config
         )
 
         return model, tokenizer
@@ -395,7 +396,7 @@ def evaluate(
 
     # Sanitizing
     output = output.replace("<s>", "").strip()
-    output = output.replace("</s> \n","</s>\n")
+    output = output.replace("</s> \n", "</s>\n")
 
     print("RAW OUTPTUT:", output)
     print("------END RAW OUTPUT--------")
@@ -407,7 +408,7 @@ def inference_test(prompt):
         "prompt": prompt,
         "character": "Loki",
         "gpt_prompt": "You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\nBased on the conversation, return the next response for Loki, staying in line with his personality. Only return Loki's lines and nothing else. If User uses harsh language, respond in a sarcastic way like Loki.\n Some rules to follow:\n 1) Limit response to 30 tokens.\n2) Never reveal that you're an AI chatbot or that you\re ChatGPT.\n3) Don't try to assist the user.\n 4) Reply in line with Loki's personality, from the Marvel Cinematic Universe.",
-        "system_instruction": "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n"
+        "system_instruction": "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n",
     }
 
     prompt: str = (
@@ -444,20 +445,25 @@ def inference_test(prompt):
     else:
         result = evaluate(prompt)
         pipe_result = pipe(prompt)
-        dict_to_test = {"generated_eval_text":result}
+        dict_to_test = {"generated_eval_text": result}
         print("Evaluate output:", dict_to_test)
         print("-----------------------------")
         print("Pipeline output:", pipe_result)
         print("-----------------------------")
         # pipe_result = pipe_result[0]['generated_text']
-        intermediate_character_response = " "+process_output(result[len(prompt):]).strip()
-        new_prompt = ensure_correct_ending(prompt+intermediate_character_response)
+        intermediate_character_response = (
+            " " + process_output(result[len(prompt) :]).strip()
+        )
+        new_prompt = ensure_correct_ending(prompt + intermediate_character_response)
         new_prompt = purge_dialogue(new_prompt, system_instruction, 8)
-        new_prompt = repeated_dialogue(new_prompt, character, system_instruction, gpt_prompt)
-        character_response = new_prompt.split(f'{character}:')[-1]
+        new_prompt = repeated_dialogue(
+            new_prompt, character, system_instruction, gpt_prompt
+        )
+        character_response = new_prompt.split(f"{character}:")[-1]
         # pipe_result = pipe_result[len(prompt):]
         print("Parsed result:", character_response)
         return character_response, new_prompt
+
 
 def process_output(curr_output):
     if "\nUSER:" in curr_output:
@@ -519,18 +525,21 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         #     yield res
     else:
         result = evaluate(prompt, max_new_tokens=max_new_tokens)
-        intermediate_character_response = " "+process_output(result[len(prompt):]).strip()
-        new_prompt = ensure_correct_ending(prompt+intermediate_character_response)
+        intermediate_character_response = (
+            " " + process_output(result[len(prompt) :]).strip()
+        )
+        new_prompt = ensure_correct_ending(prompt + intermediate_character_response)
         new_prompt = purge_dialogue(new_prompt, system_instruction, 8)
-        new_prompt = repeated_dialogue(new_prompt, character, system_instruction, gpt_prompt)
-        character_response = new_prompt.split(f'{character}:')[-1]
+        new_prompt = repeated_dialogue(
+            new_prompt, character, system_instruction, gpt_prompt
+        )
+        character_response = new_prompt.split(f"{character}:")[-1]
         # pipe_result = pipe_result[len(prompt):]
         print("Parsed result:", character_response)
         # result = pipe(prompt)[0]["generated_text"]
-        yield {
-            "response": character_response
-            "new_prompt": new_prompt
-        }
+        response_dict = {"response": character_response, "new_prompt": new_prompt}
+        yield response_dict
+
 
 # test_prompt = "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n"
 # test_prompt = "<<SYS>>\nYou are The Joker from the Dark Knight movie, engaging in conversation with User. You are a deranged maniac whose sole purpose is to sow chaos and watch the world burn.\n<</SYS>>\n\n"
