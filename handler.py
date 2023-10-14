@@ -16,6 +16,7 @@ from transformers import (
     GenerationConfig,
     pipeline,
 )
+import openai
 from peft import PeftModel
 import logging
 from peft import LoraConfig, PeftModel
@@ -23,6 +24,14 @@ from copy import copy
 import time
 import re
 import codecs
+import spacy
+import zss
+from zss import Node
+from collections import Counter
+nlp = spacy.load("en_core_web_sm")
+
+openai_model = "gpt-3.5-turbo"
+openai.api_key = "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"
 
 
 ESCAPE_SEQUENCE_RE = re.compile(
@@ -47,6 +56,199 @@ def decode_escapes(s):
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
+def purge_dialogue(text, prompt, ind):
+    pattern = r"(\w+:.*?</s>)"
+    matches = re.findall(pattern, text, re.DOTALL)
+    if len(matches) > ind:
+        matches = matches[2:]
+    return prompt + "\n".join(matches)
+
+
+def clean_list(matches):
+    # Words to remove
+    to_remove = ["Loki: ", "Tony: ", "</s>"]  # TODO: add other characters
+
+    # Remove the specified words from each sentence
+    cleaned_matches = [sentence for sentence in matches]
+    for i in range(len(cleaned_matches)):
+        for word in to_remove:
+            cleaned_matches[i] = cleaned_matches[i].replace(word, "")
+
+    return cleaned_matches
+
+
+def fragment_sentence(sentences, last_line=False):
+    # Use regular expressions to split the sentence by punctuation
+    fragments = re.split(r"[.,!?]", sentences)
+
+    # Remove any empty fragments
+    fragments = [fragment.strip() for fragment in fragments if fragment.strip()]
+    # Remove single word fragments just from last_line
+    fragments = [fragment for fragment in fragments if fragment.count(" ") > 0]
+    print(fragments)
+    return fragments
+
+
+def build_tree(sent):
+    doc = nlp(sent)
+    nodes = {word.i: Node(word.lemma_) for word in doc}
+    for word in doc:
+        if word.dep_ != "ROOT":
+            nodes[word.head.i].addkid(nodes[word.i])
+    root = [nodes[word.i] for word in doc if word.dep_ == "ROOT"][0]
+    return root
+
+
+def check_edit_distance(last_line_fragments, rest_conv_fragments):
+    for fragment in last_line_fragments:
+        last_line_tree = build_tree(fragment)
+        for sentence in rest_conv_fragments:
+            sentence_tree = build_tree(sentence)
+            distance = zss.simple_distance(last_line_tree, sentence_tree)
+            # adjust the threshold if necessary
+            if distance <= 1:
+                print("DISTANCE: ", sentence, distance)
+                return True
+    return False
+
+
+def count_repeated(sentence_list):
+    count = Counter(sentence_list)
+    for item, cnt in count.items():
+        if cnt > 2:
+            return cnt
+    return 0
+
+
+def gpt_response(latest_turns, gpt_prompt):
+    response = openai.ChatCompletion.create(
+        model=openai_model,
+        messages=[{"role": "system", "content": f"{gpt_prompt}\n{latest_turns}"}],
+    )
+    return response.choices[0]["message"]["content"]
+
+
+def remove_extra_spaces(s):
+    return " ".join(s.split())
+
+
+def handle_match(last_line, rest_conv, gpt_prompt, character, sentences):
+    partial_matches = []
+    # Full match
+    if last_line in rest_conv:
+        print("Full match")
+        response = gpt_response("\n".join(rest_conv), gpt_prompt)
+        new_last_line = (
+            character + ": " + re.sub(character + ": ", "", response) + "</s>"
+        )
+        rest_conv.append(new_last_line)
+        return True
+
+    if re.match(r'^\.*$',last_line):
+        return False
+
+    # Partial match
+    for line in rest_conv:
+        if "User:" not in line:
+            for sentence in sentences:
+                if sentence in line:
+                    partial_matches.append(sentence)
+    if partial_matches:
+        new_last_line = last_line
+        for sentence in partial_matches:
+            new_last_line = re.sub(sentence, "", new_last_line)
+        new_last_line = new_last_line.strip()
+        rest_conv.append(remove_extra_spaces(new_last_line))
+        print(
+            "_------_Partial match: ",
+            partial_matches,
+            "\nREST CONV:",
+            rest_conv,
+            "\n_--------_",
+        )
+        return True
+
+    return False
+
+
+def handle_edit_distance(
+    last_line_fragments, rest_conv_fragments, rest_conv, gpt_prompt, character
+):
+    if check_edit_distance(last_line_fragments, rest_conv_fragments):
+        print("Identical/similar message has been generated.")
+        response = gpt_response("\n".join(rest_conv), gpt_prompt)
+        new_last_line = (
+            character + ": " + re.sub(character + ": ", "", response) + "</s>"
+        )
+        rest_conv.append(new_last_line)
+        return True
+
+    return False
+
+
+def repeated_dialogue(text, character, prompt, gpt_prompt):
+    rest_conv = []
+    last_line = ""
+    last_line_fragments = ""
+    rest_conv_fragments = []
+    sentence = ""
+    pattern = r"(\w+:.*?</s>)"  # r"(\w+:.*?(?:<\\s>|<\s>))" #r"(\w+:.*?<\\s>)" #
+    matches = re.findall(pattern, text, re.DOTALL)
+    if len(matches) < 2:
+        return text
+    rest_conv = matches[:-1]
+
+    sentences_pattern = (
+        r"\w+: (.*?)</s>"  # r"\w+: (.*?)(?:<\\s>|<\s>)"#r"\w+: (.*?)<\\s>" #
+    )
+    sentences_last_line = re.findall(sentences_pattern, matches[-1], re.DOTALL)[0]
+    sentences = [
+        sent.strip() + punctuation
+        for sent, punctuation in re.findall(r"(.*?)([.!?])", sentences_last_line)
+    ]
+
+    if count_repeated(sentences) > 2:
+        last_line = character + ": " + sentences[-1] + "</s>"
+    else:
+        last_line = matches[-1]
+
+    clean_text = rest_conv + [last_line]
+    clean_text = "\n".join(clean_text)
+    edit_pattern = r"(" + character + ":.*?</s>)"
+    edit_matches = re.findall(edit_pattern, clean_text, re.DOTALL)
+    # rest_conv_edit = edit_matches[:-1]
+    cleaned_matches = clean_list(edit_matches)
+    last_line_cleaned = cleaned_matches[-1]
+    rest_conv_cleaned = cleaned_matches[:-1]
+    rest_conv_fragments = []
+
+    # fragment lines by punctuation (,.!?)
+    last_line_fragments = fragment_sentence(last_line_cleaned, last_line=True)
+    for sent in rest_conv_cleaned[-6:]:
+        rest_conv_fragments.extend(fragment_sentence(sent))
+
+    if handle_match(last_line, rest_conv, gpt_prompt, character, sentences):
+        return prompt + "\n".join(rest_conv)
+    elif handle_edit_distance(
+        last_line_fragments, rest_conv_fragments, rest_conv, gpt_prompt, character
+    ):
+        return prompt + "\n".join(rest_conv)
+    else:
+        print("NO MATCH")
+        return prompt + clean_text + "\n"
+
+def ensure_correct_ending(s):
+    s = s.strip()
+
+    # Check if the string ends with "</s>", if not, append it
+    if not (s.endswith("</s>")):
+        s += "</s>"
+
+    # Append newline character and the next speaker
+    s += "\n"  # + next_speaker
+
+    return s
+
 
 def load_model(max_new_tokens):
     global generator, default_settings
@@ -56,17 +258,17 @@ def load_model(max_new_tokens):
 
     load = True
     if load:
-        model_directory = snapshot_download(
-            repo_id=os.environ["MODEL_REPO"],
-            revision=os.getenv("MODEL_REVISION", "main"),
-            token=os.environ["AUTH_TOKEN"],
-        )
+        # model_directory = snapshot_download(
+        #     repo_id=os.environ["MODEL_REPO"],
+        #     revision=os.getenv("MODEL_REVISION", "main"),
+        #     token=os.environ["AUTH_TOKEN"],
+        # )
         # model_directory = snapshot_download(
         # repo_id=model_name,
         # token = gokul_token,
         # cache_dir = '/workspace/hub'
         # )
-        # model_directory = "/workspace/hub/models--meta-llama--Llama-2-13b-hf/snapshots/db6b8eb1feabb38985fdf785a89895959e944936/"
+        model_directory = "/workspace/hub/models--meta-llama--Llama-2-13b-hf/snapshots/db6b8eb1feabb38985fdf785a89895959e944936/"
         print("Model Directory: ", model_directory)
         tokenizer_path = os.path.join(model_directory, "tokenizer.model")
         model_config_path = os.path.join(model_directory, "config.json")
@@ -204,6 +406,8 @@ def inference_test(prompt):
     job_input = {
         "prompt": prompt,
         "character": "Loki",
+        "gpt_prompt": "You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\nBased on the conversation, return the next response for Loki, staying in line with his personality. Only return Loki's lines and nothing else. If User uses harsh language, respond in a sarcastic way like Loki.\n Some rules to follow:\n 1) Limit response to 30 tokens.\n2) Never reveal that you're an AI chatbot or that you\re ChatGPT.\n3) Don't try to assist the user.\n 4) Reply in line with Loki's personality, from the Marvel Cinematic Universe.",
+        "system_instruction": "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n"
     }
 
     prompt: str = (
@@ -211,6 +415,10 @@ def inference_test(prompt):
         + job_input.pop("prompt")
         + job_input.pop("prompt_suffix", prompt_suffix)
     )
+
+    system_instruction = job_input.pop("system_instruction")
+    gpt_prompt = job_input.pop("gpt_prompt")
+
     character = job_input.pop("character", "Loki")
     max_new_tokens = job_input.pop("max_new_tokens", 100)
     stream: bool = job_input.pop("stream", False)
@@ -242,10 +450,14 @@ def inference_test(prompt):
         print("Pipeline output:", pipe_result)
         print("-----------------------------")
         # pipe_result = pipe_result[0]['generated_text']
-        result = result[len(prompt):]
+        intermediate_character_response = " "+process_output(result[len(prompt):]).strip()
+        new_prompt = ensure_correct_ending(prompt+intermediate_character_response)
+        new_prompt = purge_dialogue(new_prompt, system_instruction, 8)
+        new_prompt = repeated_dialogue(new_prompt, character, system_instruction, gpt_prompt)
+        character_response = new_prompt.split(f'{character}:')[-1]
         # pipe_result = pipe_result[len(prompt):]
-        print("Parsed result:",result)
-        return result
+        print("Parsed result:", character_response)
+        return character_response, new_prompt
 
 def process_output(curr_output):
     if "\nUSER:" in curr_output:
@@ -271,6 +483,9 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         + job_input.pop("prompt_suffix", prompt_suffix)
     )
     print("Prompt is : ", prompt)
+
+    system_instruction = job_input.pop("system_instruction")
+    gpt_prompt = job_input.pop("gpt_prompt")
     character = job_input.pop("character", "Loki")
     max_new_tokens = job_input.pop("max_new_tokens", 100)
     stream: bool = job_input.pop("stream", False)
@@ -304,22 +519,31 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         #     yield res
     else:
         result = evaluate(prompt, max_new_tokens=max_new_tokens)
-        print("Curr result: ", result)
+        intermediate_character_response = " "+process_output(result[len(prompt):]).strip()
+        new_prompt = ensure_correct_ending(prompt+intermediate_character_response)
+        new_prompt = purge_dialogue(new_prompt, system_instruction, 8)
+        new_prompt = repeated_dialogue(new_prompt, character, system_instruction, gpt_prompt)
+        character_response = new_prompt.split(f'{character}:')[-1]
+        # pipe_result = pipe_result[len(prompt):]
+        print("Parsed result:", character_response)
         # result = pipe(prompt)[0]["generated_text"]
-        yield result[len(prompt) :]
+        yield {
+            "response": character_response
+            "new_prompt": new_prompt
+        }
 
 # test_prompt = "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n"
-# # test_prompt = "<<SYS>>\nYou are The Joker from the Dark Knight movie, engaging in conversation with User. You are a deranged maniac whose sole purpose is to sow chaos and watch the world burn.\n<</SYS>>\n\n"
+# test_prompt = "<<SYS>>\nYou are The Joker from the Dark Knight movie, engaging in conversation with User. You are a deranged maniac whose sole purpose is to sow chaos and watch the world burn.\n<</SYS>>\n\n"
 
 # print("Len OG instruction:",len(test_prompt))
 # while True:
 #     print("CURR PROMPT:", test_prompt)
 #     inp = input("USER INPUT:  ")
 #     test_prompt += f"User: {inp}</s>\nLoki:"
-#     curr_response = inference_test(test_prompt)
-#     proc_curr_response = process_output(curr_response)
-#     proc_curr_response = proc_curr_response.strip()
-#     test_prompt += " "+proc_curr_response+"</s>\n"
-
-#     print("CURR RESPONSEEE: ",proc_curr_response)
+#     curr_response, test_prompt = inference_test(test_prompt)
+#     # proc_curr_response = process_output(curr_response)
+#     # proc_curr_response = proc_curr_response.strip()
+#     # test_prompt += " "+proc_curr_response+"</s>\n"
+#     print("CURR RESPONSEEE: ",curr_response)
+#     print("CURR PROMPT: ", test_prompt)
 runpod.serverless.start({"handler": inference})
