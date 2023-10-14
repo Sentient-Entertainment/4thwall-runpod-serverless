@@ -116,13 +116,13 @@ def load_model(max_new_tokens):
         model.load_adapter(
             "gokul8967/Stark-lora",
             adapter_name="Tony Stark",
-            quantization_config=bnb_config,
+            quantization_config=bnb_config
         )
 
         model.load_adapter(
             "gokul8967/Joker-lora",
             adapter_name="Joker",
-            quantization_config=bnb_config,
+            quantization_config=bnb_config
         )
 
         return model, tokenizer
@@ -190,14 +190,19 @@ def evaluate(
         )
     s = generation_output.sequences[0]
     output = tokenizer.decode(s)
-    print("RAW OUTPTU: ", output)
-    output.replace("<s>", " ")
+
+    # Sanitizing
+    output = output.replace("<s>", "").strip()
+    output = output.replace("</s> \n","</s>\n")
+
+    print("RAW OUTPTUT:", output)
+    print("------END RAW OUTPUT--------")
     return output
 
 
-def inference_test():
+def inference_test(prompt):
     job_input = {
-        "prompt": "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard\n<<SYS>>.\n\nUser:Hey loki boss</s>\nLoki:",
+        "prompt": prompt,
         "character": "Loki",
     }
 
@@ -231,9 +236,27 @@ def inference_test():
     else:
         result = evaluate(prompt)
         pipe_result = pipe(prompt)
-        print("Evaluate output: ", result)
-        print("Pipeline output: ", pipe_result)
-        print("Parse evaluate output: ", result[len(prompt) + 5 :])
+        dict_to_test = {"generated_eval_text":result}
+        print("Evaluate output:", dict_to_test)
+        print("-----------------------------")
+        print("Pipeline output:", pipe_result)
+        print("-----------------------------")
+        # pipe_result = pipe_result[0]['generated_text']
+        result = result[len(prompt):]
+        # pipe_result = pipe_result[len(prompt):]
+        print("Parsed result:",result)
+        return result
+
+def process_output(curr_output):
+    if "\nUSER:" in curr_output:
+        assistant_response = curr_output.split("USER:")[0]
+    elif "\nUser:" in curr_output:
+        assistant_response = curr_output.split("User:")[0]
+    elif "\nuser:" in curr_output:
+        assistant_response = curr_output.split("user:")[0]
+    else:
+        return curr_output
+    return assistant_response
 
 
 def inference(event) -> Union[str, Generator[str, None, None]]:
@@ -284,11 +307,19 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         print("Curr result: ", result)
         # result = pipe(prompt)[0]["generated_text"]
         yield result[len(prompt) :]
-        # yield result[len(prompt) :]
 
+# test_prompt = "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n"
+# # test_prompt = "<<SYS>>\nYou are The Joker from the Dark Knight movie, engaging in conversation with User. You are a deranged maniac whose sole purpose is to sow chaos and watch the world burn.\n<</SYS>>\n\n"
 
+# print("Len OG instruction:",len(test_prompt))
 # while True:
-#     inp = input("Enter  ")
-#     inference_test()
+#     print("CURR PROMPT:", test_prompt)
+#     inp = input("USER INPUT:  ")
+#     test_prompt += f"User: {inp}</s>\nLoki:"
+#     curr_response = inference_test(test_prompt)
+#     proc_curr_response = process_output(curr_response)
+#     proc_curr_response = proc_curr_response.strip()
+#     test_prompt += " "+proc_curr_response+"</s>\n"
 
+#     print("CURR RESPONSEEE: ",proc_curr_response)
 runpod.serverless.start({"handler": inference})
