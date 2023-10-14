@@ -32,7 +32,8 @@ from collections import Counter
 nlp = spacy.load("en_core_web_sm")
 
 openai_model = "gpt-3.5-turbo"
-openai.api_key = "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"
+# openai.api_key = "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"
+openai.api_key  = os.environ["OPENAI_KEY"]
 
 
 ESCAPE_SEQUENCE_RE = re.compile(
@@ -261,17 +262,17 @@ def load_model(max_new_tokens):
 
     load = True
     if load:
-        # model_directory = snapshot_download(
-        #     repo_id=os.environ["MODEL_REPO"],
-        #     revision=os.getenv("MODEL_REVISION", "main"),
-        #     token=os.environ["AUTH_TOKEN"],
-        # )
+        model_directory = snapshot_download(
+            repo_id=os.environ["MODEL_REPO"],
+            revision=os.getenv("MODEL_REVISION", "main"),
+            token=os.environ["AUTH_TOKEN"],
+        )
         # model_directory = snapshot_download(
         # repo_id=model_name,
         # token = gokul_token,
         # cache_dir = '/workspace/hub'
         # )
-        model_directory = "/workspace/hub/models--meta-llama--Llama-2-13b-hf/snapshots/db6b8eb1feabb38985fdf785a89895959e944936/"
+        # model_directory = "/workspace/hub/models--meta-llama--Llama-2-13b-hf/snapshots/db6b8eb1feabb38985fdf785a89895959e944936/"
         print("Model Directory: ", model_directory)
         tokenizer_path = os.path.join(model_directory, "tokenizer.model")
         model_config_path = os.path.join(model_directory, "config.json")
@@ -421,7 +422,7 @@ def inference_test(prompt):
     gpt_prompt = job_input.pop("gpt_prompt")
 
     character = job_input.pop("character", "Loki")
-    max_new_tokens = job_input.pop("max_new_tokens", 100)
+    max_new_tokens = job_input.pop("max_new_tokens", 60)
     stream: bool = job_input.pop("stream", False)
 
     st = time.time()
@@ -450,6 +451,7 @@ def inference_test(prompt):
         print("-----------------------------")
         print("Pipeline output:", pipe_result)
         print("-----------------------------")
+        result = pipe_result[0]['generated_text']
         # pipe_result = pipe_result[0]['generated_text']
         intermediate_character_response = (
             " " + process_output(result[len(prompt) :]).strip()
@@ -524,7 +526,8 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         # for res in output:
         #     yield res
     else:
-        result = evaluate(prompt, max_new_tokens=max_new_tokens)
+        # result = evaluate(prompt, max_new_tokens=max_new_tokens)
+        result = pipe_result[0]['generated_text']
         intermediate_character_response = (
             " " + process_output(result[len(prompt) :]).strip()
         )
@@ -537,9 +540,11 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         # pipe_result = pipe_result[len(prompt):]
         print("Parsed result:", character_response)
         # result = pipe(prompt)[0]["generated_text"]
+        
         response_dict = {"response": character_response, "new_prompt": new_prompt}
         yield response_dict
 
+runpod.serverless.start({"handler": inference})
 
 # test_prompt = "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n"
 # test_prompt = "<<SYS>>\nYou are The Joker from the Dark Knight movie, engaging in conversation with User. You are a deranged maniac whose sole purpose is to sow chaos and watch the world burn.\n<</SYS>>\n\n"
@@ -555,4 +560,5 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
 #     # test_prompt += " "+proc_curr_response+"</s>\n"
 #     print("CURR RESPONSEEE: ",curr_response)
 #     print("CURR PROMPT: ", test_prompt)
-runpod.serverless.start({"handler": inference})
+
+
