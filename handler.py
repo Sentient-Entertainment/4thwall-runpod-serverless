@@ -2,6 +2,7 @@ import os, glob
 import logging
 import json
 from typing import Generator, Union
+import runpod
 import torch
 from huggingface_hub import snapshot_download
 from transformers import (
@@ -27,7 +28,6 @@ import spacy
 import zss
 from zss import Node
 from collections import Counter
-import runpod
 
 nlp = spacy.load("en_core_web_sm")
 
@@ -527,7 +527,7 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         #     yield res
     else:
         # result = evaluate(prompt, max_new_tokens=max_new_tokens)
-        result = pipe_result[0]["generated_text"]
+        result = pipe(prompt)[0]["generated_text"]
         intermediate_character_response = (
             " " + process_output(result[len(prompt) :]).strip()
         )
