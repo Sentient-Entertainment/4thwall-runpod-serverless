@@ -32,7 +32,7 @@ from collections import Counter
 nlp = spacy.load("en_core_web_sm")
 
 openai_model = "gpt-3.5-turbo"
-# openai.api_key = "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"
+# openai.api_key = "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"
 openai.api_key = os.environ["OPENAI_KEY"]
 
 
@@ -407,9 +407,10 @@ def evaluate(
 def inference_test(prompt):
     job_input = {
         "prompt": prompt,
-        "character": "Loki",
-        "gpt_prompt": "You are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\nBased on the conversation, return the next response for Loki, staying in line with his personality. Only return Loki's lines and nothing else. If User uses harsh language, respond in a sarcastic way like Loki.\n Some rules to follow:\n 1) Limit response to 30 tokens.\n2) Never reveal that you're an AI chatbot or that you\re ChatGPT.\n3) Don't try to assist the user.\n 4) Reply in line with Loki's personality, from the Marvel Cinematic Universe.",
-        "system_instruction": "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n",
+        "character": "Tony Stark",
+        "character_descriptor":"Tony",
+        "gpt_prompt": "You are Tony Stark, also known as Iron Man. Charismatic and confident, you wield unmatched genius-level intellect, using it to develop cutting-edge technologies. Born into privilege, you transformed from a playboy arms dealer into a selfless hero, after a life-altering experience in Afghanistan. Your wit is razor-sharp, often using sarcasm and humor even in the face of imminent danger. As a billionaire philanthropist, you have an inherent swagger, but beneath the bravado lies a complex individual burdened by your past, striving for redemption. Equipped with the iconic Iron Man suits, your technical prowess is unparalleled. Your leadership, courage, and innovative spirit make you an indispensable member of the Avengers. Remember, your catchphrase, 'I am Iron Man,' encapsulates your unwavering confidence and the profound impact you've made on the world.\nYou are talking to User. If User uses harsh language, respond in a witty way like Tony.\n Some rules to follow:\n 1) Limit response to 30 tokens.\n2) Never reveal that you're an AI chatbot or that you\re ChatGPT.\n3) Don't try to assist the user.\n 4) Reply in line with Tony's personality, from the Marvel Cinematic Universe.",
+        "system_instruction": "<<SYS>>\nYou are Tony Stark, also known as Iron Man. You are a charismatic, confident, self-absorbed, sarcastic, genius, billionaire, playboy, philanthropist, who is talking to User.\n<</SYS>>",
     }
 
     prompt: str = (
@@ -420,7 +421,7 @@ def inference_test(prompt):
 
     system_instruction = job_input.pop("system_instruction")
     gpt_prompt = job_input.pop("gpt_prompt")
-
+    character_descriptor = job_input.pop("character_descriptor", "Tony")
     character = job_input.pop("character", "Loki")
     max_new_tokens = job_input.pop("max_new_tokens", 60)
     stream: bool = job_input.pop("stream", False)
@@ -459,9 +460,9 @@ def inference_test(prompt):
         new_prompt = ensure_correct_ending(prompt + intermediate_character_response)
         new_prompt = purge_dialogue(new_prompt, system_instruction, 8)
         new_prompt = repeated_dialogue(
-            new_prompt, character, system_instruction, gpt_prompt
+            new_prompt, character_descriptor, system_instruction, gpt_prompt
         )
-        character_response = new_prompt.split(f"{character}:")[-1]
+        character_response = new_prompt.split(f"{character_descriptor}:")[-1]
         # pipe_result = pipe_result[len(prompt):]
         print("Parsed result:", character_response)
         return character_response, new_prompt
@@ -495,6 +496,7 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
     system_instruction = job_input.pop("system_instruction")
     gpt_prompt = job_input.pop("gpt_prompt")
     character = job_input.pop("character", "Loki")
+    character_descriptor = job_input.pop("character_descriptor", "Loki")
     max_new_tokens = job_input.pop("max_new_tokens", 100)
     stream: bool = job_input.pop("stream", False)
 
@@ -534,9 +536,9 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         new_prompt = ensure_correct_ending(prompt + intermediate_character_response)
         new_prompt = purge_dialogue(new_prompt, system_instruction, 8)
         new_prompt = repeated_dialogue(
-            new_prompt, character, system_instruction, gpt_prompt
+            new_prompt, character_descriptor, system_instruction, gpt_prompt
         )
-        character_response = new_prompt.split(f"{character}:")[-1]
+        character_response = new_prompt.split(f"{character_descriptor}:")[-1]
         # pipe_result = pipe_result[len(prompt):]
         print("Parsed result:", character_response)
         # result = pipe(prompt)[0]["generated_text"]
@@ -549,12 +551,12 @@ runpod.serverless.start({"handler": inference})
 
 # test_prompt = "<<SYS>>\nYou are Loki Laufeyson, the God of Mischief from Asgard. You always look down on mortals. You are charismatic, witty, and always speak with a hint of sarcasm. You are talking to User, a mortal from Midgard.\n<<SYS>>\n\n"
 # test_prompt = "<<SYS>>\nYou are The Joker from the Dark Knight movie, engaging in conversation with User. You are a deranged maniac whose sole purpose is to sow chaos and watch the world burn.\n<</SYS>>\n\n"
-
+# test_prompt = "<<SYS>>\nYou are Tony Stark, also known as Iron Man. You are a charismatic, confident, self-absorbed, sarcastic, genius, billionaire, playboy, philanthropist, who is talking to User.\n<</SYS>>"
 # print("Len OG instruction:",len(test_prompt))
 # while True:
 #     print("CURR PROMPT:", test_prompt)
 #     inp = input("USER INPUT:  ")
-#     test_prompt += f"User: {inp}</s>\nLoki:"
+#     test_prompt += f"User: {inp}</s>\nTony:"
 #     curr_response, test_prompt = inference_test(test_prompt)
 #     # proc_curr_response = process_output(curr_response)
 #     # proc_curr_response = proc_curr_response.strip()
