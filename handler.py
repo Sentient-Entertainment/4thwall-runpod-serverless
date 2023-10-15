@@ -2,7 +2,6 @@ import os, glob
 import logging
 import json
 from typing import Generator, Union
-import runpod
 import torch
 from huggingface_hub import snapshot_download
 from transformers import (
@@ -28,12 +27,13 @@ import spacy
 import zss
 from zss import Node
 from collections import Counter
+import runpod
 
 nlp = spacy.load("en_core_web_sm")
 
 openai_model = "gpt-3.5-turbo"
 # openai.api_key = "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"
-openai.api_key  = os.environ["OPENAI_KEY"]
+openai.api_key = os.environ["OPENAI_KEY"]
 
 
 ESCAPE_SEQUENCE_RE = re.compile(
@@ -451,7 +451,7 @@ def inference_test(prompt):
         print("-----------------------------")
         print("Pipeline output:", pipe_result)
         print("-----------------------------")
-        result = pipe_result[0]['generated_text']
+        result = pipe_result[0]["generated_text"]
         # pipe_result = pipe_result[0]['generated_text']
         intermediate_character_response = (
             " " + process_output(result[len(prompt) :]).strip()
@@ -527,7 +527,7 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         #     yield res
     else:
         # result = evaluate(prompt, max_new_tokens=max_new_tokens)
-        result = pipe_result[0]['generated_text']
+        result = pipe_result[0]["generated_text"]
         intermediate_character_response = (
             " " + process_output(result[len(prompt) :]).strip()
         )
@@ -540,9 +540,10 @@ def inference(event) -> Union[str, Generator[str, None, None]]:
         # pipe_result = pipe_result[len(prompt):]
         print("Parsed result:", character_response)
         # result = pipe(prompt)[0]["generated_text"]
-        
+
         response_dict = {"response": character_response, "new_prompt": new_prompt}
         yield response_dict
+
 
 runpod.serverless.start({"handler": inference})
 
@@ -560,5 +561,3 @@ runpod.serverless.start({"handler": inference})
 #     # test_prompt += " "+proc_curr_response+"</s>\n"
 #     print("CURR RESPONSEEE: ",curr_response)
 #     print("CURR PROMPT: ", test_prompt)
-
-
